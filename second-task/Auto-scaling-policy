@@ -1,0 +1,63 @@
+# Auto-Scaling Policy — Preventing OOMKilled
+
+## Goal
+Spread load across multiple instances instead of relying on one container, and scale up before hitting the memory limit — not after.
+
+## 1. Set realistic resource limits
+```yaml
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+```
+Base these numbers on real usage data from monitoring, not guesses.
+
+## 2. Horizontal Auto-Scaling (add more instances automatically)
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+```
+
+**Key points:**
+- `minReplicas: 2` — never rely on a single instance
+- Scale up at 70% memory usage, before hitting the OOM limit
+- Scale up fast, scale down slowly (avoids flapping — constantly adding/removing instances)
+
+## 3. Avoid duplicate/broken requests during scaling
+```yaml
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+terminationGracePeriodSeconds: 30
+```
+This makes sure traffic only goes to healthy containers, and containers finish in-flight requests before shutting down.
+
+## Summary
+Realistic limits + auto-scaling at 70% + health checks = the system spreads load automatically instead of one container crashing repeatedly.

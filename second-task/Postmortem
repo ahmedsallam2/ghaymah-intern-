@@ -1,0 +1,40 @@
+# Postmortem — OOMKilled Incident
+
+**Duration:** 45 minutes
+**Severity:** SEV-2
+**Status:** Resolved
+
+## Summary
+The application went down for 45 minutes because it kept getting killed by `OOMKilled` — the container used more memory than its allowed limit, so the platform killed and restarted it over and over (crash loop), causing repeated failed requests for users.
+
+## Timeline
+| Time | Event |
+|---|---|
+| 00:00 | Memory usage starts climbing abnormally |
+| 00:05 | First alert: memory usage > 90% |
+| 00:07 | First OOMKilled event, container restarts automatically |
+| 00:07–00:45 | Crash loop: container restarts, memory fills up again, gets killed again |
+| 00:15 | On-call engineer starts investigating |
+| 00:25 | Likely cause identified: memory leak or memory limit set too low |
+| 00:35 | Temporary fix: increased memory limit, manually restarted service |
+| 00:45 | Service stable, crash loop stopped |
+
+## Root Cause
+The container hit its memory limit and was killed by the OOM killer. Likely contributing factors:
+- A memory leak in the app (objects/connections not being released)
+- Memory limit set too low for real traffic load
+- No auto-scaling, so all load stayed on one instance instead of spreading out
+- No readiness checks, so traffic kept hitting the crashing container
+
+## Recommendations
+
+**Short-term**
+- Raise the memory limit based on real usage data
+- Add readiness/liveness probes so traffic avoids unhealthy containers
+- Add an alert at 75% memory usage, not just at the OOM point
+
+**Long-term**
+- Profile the app to find and fix the memory leak
+- Add auto-scaling based on memory usage (see autoscaling-policy.md)
+- Set resource limits per service so one app can't use all cluster memory
+- Write a runbook for OOMKilled incidents
