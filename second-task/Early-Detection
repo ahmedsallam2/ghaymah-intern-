@@ -1,0 +1,65 @@
+# Early Detection of OOMKilled Issues
+
+## Goal
+Catch memory problems before they cause a crash, not after.
+
+## 1. Metrics to watch
+- Memory usage vs memory limit (%) — the most important one
+- Restart count per container — shows if OOMKilled already happened
+- Memory usage trend over time — a steady climb points to a memory leak
+- Error rate and response latency — often rise before a full crash
+
+## 2. Alerts to set up
+```
+Warning:  memory usage > 65% for 5 minutes  → notify team
+Critical: memory usage > 85% for 2 minutes  → page on-call
+Crash loop: restart count +2 within 10 minutes → urgent alert
+```
+
+Example (Prometheus/PromQL):
+```promql
+(container_memory_working_set_bytes / container_spec_memory_limit_bytes) > 0.65
+(container_memory_working_set_bytes / container_spec_memory_limit_bytes) > 0.85
+increase(kube_pod_container_status_restarts_total[10m]) > 2
+```
+
+## 3. Spotting a memory leak
+Watch the *rate* of memory growth, not just the current value. If memory keeps climbing even during low traffic and never drops, that's a leak — not just normal load.
+
+## 4. Dashboard
+Put these on one dashboard: memory usage per container over time (with the limit as a line), restart counts, and memory usage next to request rate (to tell load spikes apart from real leaks).
+
+## Summary
+Alert early (65% / 85%), track restart counts, and watch the growth trend — not just the current memory number.# Early Detection of OOMKilled Issues
+
+## Goal
+Catch memory problems before they cause a crash, not after.
+
+## 1. Metrics to watch
+- Memory usage vs memory limit (%) — the most important one
+- Restart count per container — shows if OOMKilled already happened
+- Memory usage trend over time — a steady climb points to a memory leak
+- Error rate and response latency — often rise before a full crash
+
+## 2. Alerts to set up
+```
+Warning:  memory usage > 65% for 5 minutes  → notify team
+Critical: memory usage > 85% for 2 minutes  → page on-call
+Crash loop: restart count +2 within 10 minutes → urgent alert
+```
+
+Example (Prometheus/PromQL):
+```promql
+(container_memory_working_set_bytes / container_spec_memory_limit_bytes) > 0.65
+(container_memory_working_set_bytes / container_spec_memory_limit_bytes) > 0.85
+increase(kube_pod_container_status_restarts_total[10m]) > 2
+```
+
+## 3. Spotting a memory leak
+Watch the *rate* of memory growth, not just the current value. If memory keeps climbing even during low traffic and never drops, that's a leak — not just normal load.
+
+## 4. Dashboard
+Put these on one dashboard: memory usage per container over time (with the limit as a line), restart counts, and memory usage next to request rate (to tell load spikes apart from real leaks).
+
+## Summary
+Alert early (65% / 85%), track restart counts, and watch the growth trend — not just the current memory number.
