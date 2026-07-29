@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Monitoring Dashboard</title>
+<style>
+  :root{
+    --bg:#0b0f14;
+    --panel:#111820;
+    --panel-border:#1e2933;
+    --text:#e6edf3;
+    --muted:#7d8b98;
+    --up:#3ddc84;
+    --down:#ff5c5c;
+    --accent:#2fd0f5;
+    --mono: 'SF Mono', 'Fira Code', ui-monospace, Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(47,208,245,0.08), transparent 40%),
+      var(--bg);
+    color:var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+    padding:32px 20px;
+  }
+  .wrap{ max-width:1000px; margin:0 auto; }
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:28px; flex-wrap:wrap; gap:12px;
+  }
+  h1{ font-size:20px; font-weight:600; margin:0; letter-spacing:0.3px; }
+  .url-input{
+    background:var(--panel); border:1px solid var(--panel-border);
+    color:var(--text); font-family:var(--mono); font-size:13px;
+    padding:8px 12px; border-radius:8px; width:280px;
+  }
+  .live-dot{
+    width:8px; height:8px; border-radius:50%; background:var(--up);
+    display:inline-block; margin-right:8px;
+    box-shadow:0 0 0 0 rgba(61,220,132,0.6);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(61,220,132,0.5); }
+    70%{ box-shadow:0 0 0 8px rgba(61,220,132,0); }
+    100%{ box-shadow:0 0 0 0 rgba(61,220,132,0); }
+  }
+  .grid{
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:20px;
+  }
+  @media (max-width:700px){ .grid{ grid-template-columns:1fr; } }
+  .card{
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:14px; padding:20px;
+  }
+  .card .label{
+    font-size:12px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:1px; margin-bottom:10px;
+  }
+  .card .value{
+    font-family:var(--mono); font-size:32px; font-weight:600;
+  }
+  .status-up{ color:var(--up); }
+  .status-down{ color:var(--down); }
+  .badge{
+    display:inline-flex; align-items:center; gap:8px;
+    font-size:22px; font-weight:700; font-family:var(--mono);
+  }
+  .dot{ width:10px; height:10px; border-radius:50%; }
+  .dot.up{ background:var(--up); }
+  .dot.down{ background:var(--down); }
+  .log{
+    background:var(--panel); border:1px solid var(--panel-border);
+    border-radius:14px; padding:16px 20px; max-height:220px; overflow-y:auto;
+  }
+  .log h2{ font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin:0 0 10px 0;}
+  .log-line{
+    font-family:var(--mono); font-size:12.5px; color:var(--muted);
+    padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.03);
+    display:flex; gap:10px;
+  }
+  .log-line:last-child{ border-bottom:none; }
+  .log-line .t{ color:var(--text); }
+  .footer-note{ color:var(--muted); font-size:12px; margin-top:20px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="live-dot"></span>API Monitoring Dashboard</h1>
+    <input id="apiUrl" class="url-input" value="http://localhost:8080" spellcheck="false">
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Status</div>
+      <div class="badge" id="statusBadge">
+        <span class="dot up" id="statusDot"></span>
+        <span id="statusText">Checking…</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">Response Time</div>
+      <div class="value" id="responseTime">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Request Count</div>
+      <div class="value" id="requestCount">—</div>
+    </div>
+  </div>
+
+  <div class="log">
+    <h2>Recent Check Log</h2>
+    <div id="logBody"></div>
+  </div>
+
+  <div class="footer-note">Polling /health and /metrics directly from the browser every 5 seconds</div>
+</div>
+
+<script>
+const urlInput = document.getElementById('apiUrl');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const responseTime = document.getElementById('responseTime');
+const requestCount = document.getElementById('requestCount');
+const logBody = document.getElementById('logBody');
+
+const MAX_LOG_LINES = 12;
+
+function addLog(text, ok){
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  const time = new Date().toLocaleTimeString('en-US');
+  line.innerHTML = `<span class="t">[${time}]</span><span>${text}</span>`;
+  logBody.prepend(line);
+  while(logBody.children.length > MAX_LOG_LINES){
+    logBody.removeChild(logBody.lastChild);
+  }
+}
+
+async function poll(){
+  const base = urlInput.value.replace(/\/$/, '');
+  const start = performance.now();
+  try {
+    const healthRes = await fetch(`${base}/health`, { cache: 'no-store' });
+    const elapsed = Math.round(performance.now() - start);
+    const ok = healthRes.ok;
+
+    statusDot.className = 'dot ' + (ok ? 'up' : 'down');
+    statusText.textContent = ok ? 'UP' : 'DOWN';
+    statusText.className = ok ? 'status-up' : 'status-down';
+    responseTime.textContent = `${elapsed} ms`;
+
+    let reqCountText = '—';
+    try {
+      const metricsRes = await fetch(`${base}/metrics`, { cache: 'no-store' });
+      if (metricsRes.ok) {
+        const data = await metricsRes.json();
+        reqCountText = data.request_count ?? '—';
+      }
+    } catch (_) { /* metrics endpoint optional */ }
+    requestCount.textContent = reqCountText;
+
+    addLog(`GET /health → ${healthRes.status} (${elapsed}ms)`, ok);
+  } catch (err) {
+    statusDot.className = 'dot down';
+    statusText.textContent = 'DOWN';
+    statusText.className = 'status-down';
+    responseTime.textContent = '—';
+    addLog(`Connection failed: ${err.message}`, false);
+  }
+}
+
+poll();
+setInterval(poll, 5000);
+</script>
+</body>
+</html>
